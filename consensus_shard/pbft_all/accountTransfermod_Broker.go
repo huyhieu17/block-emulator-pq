@@ -9,6 +9,7 @@ import (
 	"blockEmulator/message"
 	"blockEmulator/networks"
 	"blockEmulator/params"
+	"container/heap"
 	"encoding/json"
 	"log"
 	"time"
@@ -69,6 +70,16 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
 	// send the accounts to other shards
 	cphm.pbftNode.CurChain.Txpool.GetLocked()
+
+	// Get all transactions from the queue
+	allTxs := make([]*core.Transaction, 0)
+	for cphm.pbftNode.CurChain.Txpool.TxQueue.Len() > 0 {
+		allTxs = append(allTxs, heap.Pop(cphm.pbftNode.CurChain.Txpool.TxQueue).(*core.Transaction))
+	}
+
+	// Track which transactions should be removed
+	txToRemove := make(map[int]bool)
+
 	for i := uint64(0); i < cphm.pbftNode.pbftChainConfig.ShardNums; i++ {
 		if i == cphm.pbftNode.ShardID {
 			continue
@@ -85,9 +96,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 		}
 		// fetch transactions to it, after the transactions is fetched, delete it in the pool
 		txSend := make([]*core.Transaction, 0)
-		firstPtr := 0
-		for secondPtr := 0; secondPtr < len(cphm.pbftNode.CurChain.Txpool.TxQueue); secondPtr++ {
-			ptx := cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
+		for txIdx, ptx := range allTxs {
 			// whether should be transfer or not
 			beSend := false
 			beRemoved := false
@@ -118,12 +127,10 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 			if beSend {
 				txSend = append(txSend, ptx)
 			}
-			if !beRemoved {
-				cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
-				firstPtr++
+			if beRemoved {
+				txToRemove[txIdx] = true
 			}
 		}
-		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
 
 		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", i)
 		ast := message.AccountStateAndTx{
@@ -140,6 +147,14 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 		networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[i][0])
 		cphm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", i)
 	}
+
+	// Put transactions that weren't removed back in the queue
+	for txIdx, tx := range allTxs {
+		if !txToRemove[txIdx] {
+			heap.Push(cphm.pbftNode.CurChain.Txpool.TxQueue, tx)
+		}
+	}
+
 	cphm.pbftNode.CurChain.Txpool.GetUnlocked()
 
 	// send these txs to supervisor

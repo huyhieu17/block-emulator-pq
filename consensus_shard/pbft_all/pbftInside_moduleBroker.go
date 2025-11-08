@@ -138,7 +138,7 @@ func (rbhm *RawBrokerPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bo
 		metricVal := []string{
 			strconv.Itoa(int(block.Header.Number)),
 			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(rbhm.pbftNode.CurChain.Txpool.TxQueue)),
+			strconv.Itoa(rbhm.pbftNode.CurChain.Txpool.TxQueue.Len()),
 			strconv.Itoa(len(block.Body)),
 			strconv.Itoa(len(broker1Txs)),
 			strconv.Itoa(len(broker2Txs)),

@@ -187,7 +187,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) HandleinCommit(cmsg *message
 		metricVal := []string{
 			strconv.Itoa(int(block.Header.Number)),
 			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(cphm.pbftNode.CurChain.Txpool.TxQueue)),
+			strconv.Itoa(cphm.pbftNode.CurChain.Txpool.TxQueue.Len()),
 			strconv.Itoa(len(block.Body)),
 			strconv.Itoa(len(broker1Txs)),
 			strconv.Itoa(len(broker2Txs)),

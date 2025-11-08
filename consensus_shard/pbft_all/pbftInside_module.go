@@ -137,7 +137,7 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 		metricVal := []string{
 			strconv.Itoa(int(block.Header.Number)),
 			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(rphm.pbftNode.CurChain.Txpool.TxQueue)),
+			strconv.Itoa(rphm.pbftNode.CurChain.Txpool.TxQueue.Len()),
 			strconv.Itoa(len(block.Body)),
 			strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),

@@ -8,6 +8,7 @@ import (
 	"blockEmulator/core"
 	"blockEmulator/message"
 	"blockEmulator/networks"
+	"container/heap"
 	"encoding/json"
 	"log"
 	"time"
@@ -67,7 +68,17 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
 	// send the accounts to other shards
 	cphm.pbftNode.CurChain.Txpool.GetLocked()
-	cphm.pbftNode.pl.Plog.Println("The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
+	cphm.pbftNode.pl.Plog.Println("The size of tx pool is: ", cphm.pbftNode.CurChain.Txpool.TxQueue.Len())
+
+	// Get all transactions from the queue
+	allTxs := make([]*core.Transaction, 0)
+	for cphm.pbftNode.CurChain.Txpool.TxQueue.Len() > 0 {
+		allTxs = append(allTxs, heap.Pop(cphm.pbftNode.CurChain.Txpool.TxQueue).(*core.Transaction))
+	}
+
+	// Track which transactions should be removed
+	txToRemove := make(map[int]bool)
+
 	for i := uint64(0); i < cphm.pbftNode.pbftChainConfig.ShardNums; i++ {
 		if i == cphm.pbftNode.ShardID {
 			continue
@@ -84,9 +95,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		}
 		// fetch transactions to it, after the transactions is fetched, delete it in the pool
 		txSend := make([]*core.Transaction, 0)
-		firstPtr := 0
-		for secondPtr := 0; secondPtr < len(cphm.pbftNode.CurChain.Txpool.TxQueue); secondPtr++ {
-			ptx := cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
+		for txIdx, ptx := range allTxs {
 			// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
 			_, ok1 := addrSet[ptx.Sender]
 			condition1 := ok1 && !ptx.Relayed
@@ -95,12 +104,9 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			condition2 := ok2 && ptx.Relayed
 			if condition1 || condition2 {
 				txSend = append(txSend, ptx)
-			} else {
-				cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
-				firstPtr++
+				txToRemove[txIdx] = true
 			}
 		}
-		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
 
 		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", i)
 		ast := message.AccountStateAndTx{
@@ -117,7 +123,15 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[i][0])
 		cphm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", i)
 	}
-	cphm.pbftNode.pl.Plog.Println("after sending, The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
+
+	// Put transactions that weren't sent back in the queue
+	for txIdx, tx := range allTxs {
+		if !txToRemove[txIdx] {
+			heap.Push(cphm.pbftNode.CurChain.Txpool.TxQueue, tx)
+		}
+	}
+
+	cphm.pbftNode.pl.Plog.Println("after sending, The size of tx pool is: ", cphm.pbftNode.CurChain.Txpool.TxQueue.Len())
 	cphm.pbftNode.CurChain.Txpool.GetUnlocked()
 }
 
@@ -149,7 +163,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod) proposePartition() (bool, *message.Req
 		}
 	}
 	cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
-	cphm.pbftNode.pl.Plog.Println("The size of txpool: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
+	cphm.pbftNode.pl.Plog.Println("The size of txpool: ", cphm.pbftNode.CurChain.Txpool.TxQueue.Len())
 
 	atmaddr := make([]string, 0)
 	atmAs := make([]*core.AccountState, 0)
